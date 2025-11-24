@@ -1,14 +1,14 @@
 set -x
 
 export CUDA_VISIBLE_DEVICES=0
-MODEL_NAME=qwen-SFT
+MODEL_NAME=qwen
 export MODEL_TEMPLATE=qwen
-DATASET=musique
-MODEL_PATH=/mnt/shared-storage-user/liyafu/runquan/Ineffective-Thinking-main/SFT/output/sft_experiment_20251120_182435/global_step_138
+DATASET=halueval
+MODEL_PATH=/mnt/shared-storage-user/liyafu/models/Qwen2.5-7B-Instruct
 #/mnt/shared-storage-user/liyafu/models/Qwen2.5-7B-Instruct
 #Qwen2.5-7B-Instruct Llama-3.1-8B-Instruct
-test_files="['data/$DATASET/test_true.parquet']"
-export SYSTEM_PROMPT_TYPE=directly 
+test_files="['data/$DATASET/test.parquet']"
+export SYSTEM_PROMPT_TYPE=tot #directly, cot, tot, dac, htp
 
 OUTPUT_FILE=inference/inference_results/$MODEL_NAME/$DATASET.jsonl
 FILTER_TYPE=all  # all, answerable, unanswerable

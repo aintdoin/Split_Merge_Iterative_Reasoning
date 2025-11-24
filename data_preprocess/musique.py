@@ -65,95 +65,17 @@ if __name__ == '__main__':
     args.local_dir = 'data/musique'
 
     class QASentenceConverter:
-        """Convert (question, answer, prior answers) into a single declarative sentence via LLM.
-        Falls back to a deterministic template if API unavailable or fails.
-        """
+        """Convert (question, answer, prior answers) into a single declarative sentence."""
+        
         def __init__(self):
-            self.api_base = os.environ.get('LLM_JUDGE_API_BASE', '').strip()
-            self.model_name = os.environ.get('LLM_JUDGE_MODEL_NAME', '').strip() or 'llm-judge'
-            self.api_key = os.environ.get('LLM_JUDGE_API_KEY', '').strip()
-            self.timeout = float(os.environ.get('LLM_JUDGE_TIMEOUT', '60'))
-            self.max_workers = int(os.environ.get('LLM_JUDGE_MAX_WORKERS', '8'))
-            try:
-                import requests  # type: ignore
-                self.requests = requests
-            except Exception:
-                self.requests = None
-            self.use_api = bool(self.api_base and self.requests)
-            # Stats
-            self._lock = threading.Lock()
-            self.stats = {
-                'api_success': 0,
-                'api_fallback': 0,
-                'api_error': 0,
-            }
-
-        def _inc(self, key: str, value: int = 1) -> None:
-            with self._lock:
-                self.stats[key] = self.stats.get(key, 0) + value
-
-        def _build_messages(self, question: str, answer: str, prior_answers: list) -> list:
-            system_content = (
-                "You are an expert at turning subquestion-answer pairs into one clear, natural English statement.\n\n"
-                "Instructions:\n"
-                "1. Produce ONE grammatically correct declarative sentence using the given subquestion and its answer.\n"
-                "2. Preserve the semantic relationship between entities.\n"
-                "3. If the subquestion contains references like #1, #2, etc., resolve them using the list of prior answers (1-indexed).\n"
-                "4. Return ONLY the resulting sentence, nothing else.\n\n"
-                "Examples:\n"
-                "Q: who wrote crazy little thing called love original artist | A: Freddie Mercury\n"
-                "→ Freddie Mercury wrote Crazy Little Thing Called Love.\n\n"
-                "Q: In what year did #1 die? | A: 1991 | prior: ['Freddie Mercury']\n"
-                "→ Freddie Mercury died in 1991."
-            )
-            user_content = (
-                "Convert the following pair into a single statement.\n"
-                f"Subquestion: {question}\n"
-                f"Answer: {answer}\n"
-                f"Prior answers (for # references): {json.dumps(prior_answers, ensure_ascii=False)}"
-            )
-            return [
-                {"role": "system", "content": system_content},
-                {"role": "user", "content": user_content},
-            ]
-
-        def _call_chat(self, messages: list) -> str:
-            assert self.requests is not None
-            base = self.api_base.rstrip('/')
-            url = base + '/v1/chat/completions'
-            headers = {'Content-Type': 'application/json'}
-            if self.api_key:
-                headers['Authorization'] = f'Bearer {self.api_key}'
-            payload = {
-                'model': self.model_name,
-                'messages': messages,
-                'temperature': 0.0,
-                'max_tokens': 80,
-                'stream': False,
-            }
-            resp = self.requests.post(url, json=payload, headers=headers, timeout=self.timeout)
-            resp.raise_for_status()
-            data = resp.json()
-            text = data.get('choices', [{}])[0].get('message', {}).get('content', '')
-            return text.strip() if text else ''
+            pass
 
         def convert_one(self, question: str, answer: str, prior_answers: list) -> str:
             q = str(question or '').strip()
             a = str(answer or '').strip()
             if not q or not a:
                 return ''
-            if self.use_api:
-                try:
-                    messages = self._build_messages(q, a, prior_answers)
-                    out = self._call_chat(messages)
-                    if out:
-                        self._inc('api_success', 1)
-                        return out
-                    self._inc('api_fallback', 1)
-                except Exception:
-                    self._inc('api_error', 1)
-                    self._inc('api_fallback', 1)
-            # Fallback template
+            # Simple template without API calls
             return f"{a} is the answer to: {q}."
 
     # 读取 JSONL 并在内存中构建列表
@@ -210,8 +132,6 @@ if __name__ == '__main__':
                             prior_answers.append(a.strip())
                     # Remove the original decomposition as it's now summarized
                     del data['question_decomposition']
-                else:
-                    qd = qd if isinstance(qd, list) else []
 
                 # Save evidences as string representation for consistency
                 data['evidences'] = str(evidences_list)
@@ -220,9 +140,7 @@ if __name__ == '__main__':
                 if verbose or (log_every > 0 and (idx_data + 1) % log_every == 0):
                     print(
                         f"[musique] idx={idx_data + 1}/{len(selected_records)} "
-                        f"qd_items={(len(qd) if isinstance(qd, list) else 0)} "
-                        f"evidences={len(evidences_list)} llm={qa_converter.stats['api_success']} "
-                        f"fallback={qa_converter.stats['api_fallback']} api_errors={qa_converter.stats['api_error']}"
+                        f"evidences={len(evidences_list)}"
                     )
             else:
                 # For test split, do not generate evidences; ensure empty and drop qd if present
@@ -254,7 +172,7 @@ if __name__ == '__main__':
             answer = example.get('answer', '')
             answer_aliases = example.get('answer_aliases', [])
             sample_id = example.get('id')
-            answerable = example.get('answerable', True)
+            answerable = True
             evidences = example.get('evidences', '[]')
             original_question = example.get('question', '')
             data = {
@@ -268,7 +186,7 @@ if __name__ == '__main__':
                     'index': idx,
                     'sample_id': sample_id,
                     'answer_aliases': answer_aliases,
-                    'answerable': answerable,
+                    'answerable': True,
                 }
             }
             return data

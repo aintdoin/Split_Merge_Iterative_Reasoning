@@ -575,31 +575,13 @@ def create_unanswerable_samples_with_filter(dataset, start_idx, num_samples, tem
 
 
 def main():
-    parser = argparse.ArgumentParser(description='合并hotpot数据处理和Best-of-N过滤')
+    parser = argparse.ArgumentParser(description='hotpotqa 转化 + evidences句子化（仅保存answerable=true样本）')
     parser.add_argument('--type', type=str, default='train', help='train或test')
     parser.add_argument('--template_type', type=str, default='deepseek-r1-distill-qwen')
-    parser.add_argument('--size', type=int, required=True, help='目标样本总数（将平分为answerable和unanswerable）')
+    parser.add_argument('--size', type=int, required=True, help='目标样本总数（所有样本均为answerable=true）')
     
     # 数据路径
     parser.add_argument('--data-path', type=str, default=None, help='输入JSONL文件路径')
-    
-    # 模型/API配置
-    parser.add_argument('--model-path', type=str, default='', help='本地模型路径（vLLM模式）')
-    parser.add_argument('--use-api', action='store_true', help='使用API模式而非本地vLLM')
-    parser.add_argument('--api-base', type=str, default='http://localhost:8000', help='API基础URL')
-    parser.add_argument('--api-key', type=str, default='', help='API密钥（可选）')
-    parser.add_argument('--model-name', type=str, default='', help='API模型名称')
-    
-    # 过滤参数
-    parser.add_argument('--n-candidates', type=int, default=32, help='每个样本生成的候选回答数量')
-    parser.add_argument('--temperature', type=float, default=1.0, help='采样温度')
-    parser.add_argument('--top-p', type=float, default=0.95, help='Top-p采样参数')
-    parser.add_argument('--top-k', type=int, default=100, help='Top-k采样参数')
-    parser.add_argument('--max-tokens', type=int, default=2048, help='最大生成token数')
-    
-    # vLLM参数
-    parser.add_argument('--max-model-len', type=int, default=24500, help='vLLM最大模型长度')
-    parser.add_argument('--tensor-parallel-size', type=int, default=1, help='vLLM张量并行大小')
     
     args = parser.parse_args()
     
@@ -706,29 +688,10 @@ def main():
     postprocessor = get_postprocessor()
     print("   ✓ Postprocessor初始化完成")
     
-    # 步骤1: 创建answerable样本
-    answerable_samples = create_answerable_samples(dataset, answerable_size, args.template_type)
+    # 创建answerable样本
+    answerable_samples = create_answerable_samples(dataset, args.size, args.template_type)
     
-    # 步骤2: 创建并过滤unanswerable样本
-    unanswerable_samples = create_unanswerable_samples_with_filter(
-        dataset, answerable_size, unanswerable_size, args.template_type,
-        args, llm, sampling_params, postprocessor
-    )
-    
-    # 合并样本
-    print(f"\n{'='*80}")
-    print("步骤3: 合并并保存数据集")
-    print(f"{'='*80}")
-    
-    all_samples = answerable_samples + unanswerable_samples
-    print(f"总样本数: {len(all_samples)}")
-    print(f"  - Answerable: {len(answerable_samples)}")
-    print(f"  - Unanswerable: {len(unanswerable_samples)}")
-    
-    # 转换为Dataset
-    combined_dataset = Dataset.from_list(all_samples)
-    
-    # 重新生成prompt
+    # 生成prompt
     def regenerate_prompt(example, idx):
         question = make_prefix_unified(example, template_type=args.template_type)
         return {
@@ -741,12 +704,10 @@ def main():
             "evidences": example['evidences'],
         }
     
+    # 转换为Dataset并生成prompt
+    answerable_ds = Dataset.from_list(answerable_samples)
     print("\n生成prompt...")
-    combined_dataset = combined_dataset.map(regenerate_prompt, with_indices=True)
-    
-    # 洗混数据
-    print("洗混数据集...")
-    combined_dataset = combined_dataset.shuffle(seed=42)
+    answerable_ds = answerable_ds.map(regenerate_prompt, with_indices=True)
     
     # 保存
     output_dir = f'data/hotpot/{args.template_type}'
@@ -757,22 +718,18 @@ def main():
     else:
         output_file = os.path.join(output_dir, 'test.parquet')
     
-    combined_dataset.to_parquet(output_file)
+    answerable_ds.to_parquet(output_file)
     print(f"\n💾 保存到{output_file}")
-    print(f"   ✓ 最终数据集: {len(combined_dataset)}个样本")
+    print(f"   ✓ 最终数据集: {len(answerable_ds)}个样本")
     
     # 验证
     df_verify = pd.read_parquet(output_file)
-    n_false = sum(1 for _, row in df_verify.iterrows() 
-                  if isinstance(row.get('extra_info'), (dict, str)) and 
-                  (json.loads(row['extra_info']) if isinstance(row['extra_info'], str) else row['extra_info']).get('answerable') == False)
     n_true = sum(1 for _, row in df_verify.iterrows() 
                  if isinstance(row.get('extra_info'), (dict, str)) and 
                  (json.loads(row['extra_info']) if isinstance(row['extra_info'], str) else row['extra_info']).get('answerable') == True)
     
     print(f"\n验证:")
-    print(f"   ✓ answerable=True: {n_true}")
-    print(f"   ✓ answerable=False: {n_false}")
+    print(f"   ✓ answerable=True: {n_true}/{len(df_verify)}")
     
     # 清理
     if llm is not None:

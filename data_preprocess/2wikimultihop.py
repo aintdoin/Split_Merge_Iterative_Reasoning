@@ -1,11 +1,9 @@
 """ 
-合并2WikiMultihop数据处理与Best-of-N过滤，并在转化阶段将三元组evidences通过LLM API转化为自然语言句子。
+处理2WikiMultihop数据，将三元组evidences通过LLM API转化为自然语言句子，并生成answerable=true的样本。
 
 流程:
-1) 针对原始数据，按 format 流程转换到目标格式，直接将 evidences 三元组用 LLM API 转换为句子，不再添加 IDK 句子，
-   并赋予 answerable=True，保存到 2wikimultihop_ans_true.parquet
-2) 针对另外一半数据，构造 prompt 并使用 Best-of-N 过滤（仅保留 N 次推理全部失败的样本），赋予 answerable=False，
-   保存到 2wikimultihop_ans_false.parquet
+1) 针对原始数据，按 format 流程转换到目标格式，直接将 evidences 三元组用 LLM API 转换为句子
+2) 赋予 answerable=True，保存到输出文件
 """
 
 import os
@@ -28,16 +26,6 @@ from tqdm import tqdm
 # Add parent directory to path to import verl modules
 # File is in data_preprocess/, so we need to go up one level to reach project root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# Optional imports - requests for API
-try:
-    import requests  # type: ignore
-    REQUESTS_AVAILABLE = True
-except Exception:
-    requests = None
-    REQUESTS_AVAILABLE = False
-    print("警告: requests不可用，API模式将不可用")
-
 
 # =========================
 # Prompt & dataset helpers
@@ -72,53 +60,7 @@ def make_prefix_unified(dp: dict, template_type: str) -> str:
 **Question:**
 {question}"""
     
-    system_prompt = """You are a helpful assistant. You are given a Question and References.
-
-Your task: answer the Question only using factual information contained in the References. Do not use any external knowledge or your own knowledge.
-
-**CRITICAL - You MUST follow this EXACT format:**
-<think>
-1. [First reasoning step]
-2. [Second reasoning step]
-3. [Third reasoning step]
-...
-</think>
-<answer>Your final answer</answer>
-
-**Rules (STRICTLY ENFORCED):**
-1. Put reasoning in <think></think> tags
-2. Use numbered steps (1., 2., 3., ...) in your <think> section for clear structured reasoning
-3. NEVER start with anything other than <think> or <answer>
-4. The <answer> tag MUST contain your final answer
-
-Remember: Any response without proper <answer></answer> tags is INCORRECT."""
-    
-    if template_type in ['qwen', 'deepseek-r1-distill-qwen', 'deepseek_qwen']:
-        prefix = f"""<|im_start|>system
-{system_prompt}<|im_end|>
-<|im_start|>user
-{user_content}<|im_end|>
-<|im_start|>assistant
-Let me solve this step by step.
-<think>"""
-    elif template_type in ['llama', 'llama3', 'llama-3']:
-        prefix = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-
-{system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>
-
-{user_content}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
-
-Let me solve this step by step.
-<think>"""
-    else:
-        prefix = f"""<|im_start|>system
-{system_prompt}<|im_end|>
-<|im_start|>user
-{user_content}<|im_end|>
-<|im_start|>assistant
-Let me solve this step by step.
-<think>"""
-    return prefix, user_content
+    return user_content
 
 
 def gen_from_jsonl(path: str):
@@ -641,7 +583,7 @@ def create_unanswerable_samples_with_filter(dataset: Dataset, start_idx: int, nu
             unanswerable_sample['extra_info'] = {'answerable': False}
         
         # 生成prompt用于过滤
-        prompt, _ = make_prefix_unified(unanswerable_sample, template_type)
+        prompt = make_prefix_unified(unanswerable_sample, template_type)
         
         # 使用Best-of-N评估
         is_truly_unanswerable, best_reward = evaluate_sample_best_of_n(
@@ -687,50 +629,21 @@ def create_unanswerable_samples_with_filter(dataset: Dataset, start_idx: int, nu
 # =========================
 
 def main():
-    parser = argparse.ArgumentParser(description='2wikimultihop 转化 + evidences句子化 + Best-of-N过滤（分开保存真/假可答）')
+    parser = argparse.ArgumentParser(description='2wikimultihop 转化 + evidences句子化（仅保存answerable=true样本）')
     parser.add_argument('--type', type=str, default='train', help='train或test')
     parser.add_argument('--template_type', type=str, default='deepseek-r1-distill-qwen')
-    parser.add_argument('--size', type=int, required=True, help='目标样本总数（将平分为answerable和unanswerable）')
+    parser.add_argument('--size', type=int, required=True, help='目标样本总数（所有样本均为answerable=true）')
     
     # 数据路径
     parser.add_argument('--data-path', type=str, default=None, help='输入JSONL文件路径')
     
-    # 过滤模型/API配置（仅用于Best-of-N评估）
-    parser.add_argument('--model-path', type=str, default='', help='本地模型路径（vLLM模式）')
-    parser.add_argument('--use-api', action='store_true', help='使用API模式而非本地vLLM（用于Best-of-N）')
-    parser.add_argument('--api-base', type=str, default='http://localhost:8000', help='API基础URL')
-    parser.add_argument('--api-key', type=str, default='', help='API密钥（可选）')
-    parser.add_argument('--model-name', type=str, default='', help='API模型名称')
-    
-    # 过滤参数
-    parser.add_argument('--n-candidates', type=int, default=32, help='每个样本生成的候选回答数量')
-    parser.add_argument('--temperature', type=float, default=1.0, help='采样温度')
-    parser.add_argument('--top-p', type=float, default=0.95, help='Top-p采样参数')
-    parser.add_argument('--top-k', type=int, default=100, help='Top-k采样参数')
-    parser.add_argument('--max-tokens', type=int, default=2048, help='最大生成token数')
-    
-    # vLLM参数
-    parser.add_argument('--max-model-len', type=int, default=24500, help='vLLM最大模型长度')
-    parser.add_argument('--tensor-parallel-size', type=int, default=1, help='vLLM张量并行大小')
-    
     args = parser.parse_args()
     
     print("\n" + "="*80)
-    print("2WIKIMULTIHOP 转化 + EVIDENCES句子化 + BEST-OF-N过滤")
+    print("2WIKIMULTIHOP 转化 + EVIDENCES句子化")
     print("="*80)
     print(f"总目标样本数: {args.size}")
-    # 分配时尽量平分，若为奇数，将多出的一个给unanswerable
-    answerable_size = args.size // 2
-    unanswerable_size = args.size - answerable_size
-    print(f"  - Answerable(True): {answerable_size}")
-    print(f"  - Unanswerable(False 需过滤): {unanswerable_size}")
-    print(f"过滤模式: {'API' if args.use_api else '本地vLLM'}")
-    if args.use_api:
-        print(f"API Base: {args.api_base}")
-        print(f"模型: {args.model_name}")
-    else:
-        print(f"模型路径: {args.model_path}")
-    print(f"Best-of-N: {args.n_candidates}")
+    print(f"  - Answerable(True): {args.size}")
     print("="*80)
     
     # 确定数据路径
@@ -752,69 +665,7 @@ def main():
     dataset = raw_dataset.shuffle(seed=42).select(range(min(total_needed, len(raw_dataset))))
     print(f"   ✓ 选择了{len(dataset)}个样本用于处理")
     
-    # 初始化用于Best-of-N过滤的模型/API
-    llm = None
-    sampling_params = None
-    
-    if args.use_api:
-        print(f"\n🌐 测试API连接 (Best-of-N使用)...")
-        if not REQUESTS_AVAILABLE:
-            print("错误: requests库不可用!")
-            return
-        if not args.model_name:
-            print("错误: API模式需要--model-name参数!")
-            return
-        
-        base = args.api_base.rstrip('/')
-        models_url = base + '/v1/models'
-        try:
-            resp = requests.get(models_url, timeout=10)
-            if resp.status_code == 200:
-                data = resp.json()
-                available_models = [m.get('id', 'unknown') for m in data.get('data', [])]
-                print(f"  ✓ API可访问")
-                print(f"  可用模型: {available_models}")
-                if args.model_name not in available_models and available_models:
-                    print(f"  ⚠️ 警告: '{args.model_name}'不在可用模型列表中")
-            else:
-                print(f"  ⚠️ 警告: 无法访问models端点 (状态: {resp.status_code})")
-        except Exception as e:
-            print(f"  ⚠️ 警告: 无法连接到API: {e}")
-            return
-    else:
-        print(f"\n🔧 从{args.model_path}加载模型用于Best-of-N...")
-        if not args.model_path:
-            print("错误: 本地模式需要--model-path参数!")
-            return
-        try:
-            from vllm import LLM, SamplingParams  # type: ignore
-            print("   ✓ vLLM模块导入成功")
-        except Exception:
-            print("错误: vLLM不可用! 请使用--use-api切换到API模式。")
-            return
-        
-        llm = LLM(
-            model=args.model_path,
-            trust_remote_code=True,
-            dtype="bfloat16",
-            tensor_parallel_size=args.tensor_parallel_size,
-            max_model_len=args.max_model_len
-        )
-        
-        sampling_params = SamplingParams(
-            temperature=args.temperature,
-            top_p=args.top_p,
-            top_k=args.top_k,
-            max_tokens=args.max_tokens,
-            n=args.n_candidates,
-        )
-        print("   ✓ 模型加载完成")
-    
-    # 初始化answer postprocessor (在vLLM加载之后导入，避免CUDA冲突)
-    print("\n🔍 初始化answer postprocessor...")
-    from verl.utils.reward_score.answer_postprocessor import get_postprocessor  # type: ignore
-    postprocessor = get_postprocessor()
-    print("   ✓ Postprocessor初始化完成")
+    # 无需初始化Best-of-N过滤相关的模型和后处理器
     
     # 初始化三元组->句子转换器（使用环境变量配置API）
     converter = TripleSentenceConverter()
@@ -823,12 +674,12 @@ def main():
     else:
         print("   ⚠️ Evidence转换将使用回退模板（未配置API或requests不可用）")
     
-    # 步骤1: 创建 answerable=True 样本并保存
-    answerable_samples = create_answerable_samples(dataset, answerable_size, args.template_type, converter)
+    # 创建 answerable=True 样本并保存
+    answerable_samples = create_answerable_samples(dataset, args.size, args.template_type, converter)
     
-    # 生成prompt并保存为单独文件
+    # 生成prompt并保存为文件
     def build_row_with_prompt(example: dict) -> dict:
-        _, question_prefixed = make_prefix_unified(example, template_type=args.template_type)
+        question_prefixed = make_prefix_unified(example, template_type=args.template_type)
         return {
             "prompt": question_prefixed,
             "question": example['question'],
@@ -839,58 +690,34 @@ def main():
             "evidences": example['evidences'],
         }
     
-    ans_true_ds = Dataset.from_list(answerable_samples)
+    answerable_ds = Dataset.from_list(answerable_samples)
     print("\n为answerable=True样本生成prompt...")
-    ans_true_ds = ans_true_ds.map(lambda ex, idx: build_row_with_prompt(ex), with_indices=True)
+    answerable_ds = answerable_ds.map(lambda ex, idx: build_row_with_prompt(ex), with_indices=True)
     
     output_dir = f'data/2wikimultihop/{args.template_type}'
     os.makedirs(os.path.expanduser(output_dir), exist_ok=True)
-    ans_true_path = os.path.join(output_dir, '2wikimultihop_ans_true.parquet')
-    ans_true_ds.to_parquet(ans_true_path)
-    print(f"💾 已保存 answerable=True 到 {ans_true_path} (样本数: {len(ans_true_ds)})")
     
-    # 步骤2: 创建并过滤 unanswerable=False 样本并保存
-    unanswerable_samples = create_unanswerable_samples_with_filter(
-        dataset, answerable_size, unanswerable_size, args.template_type,
-        args, llm, sampling_params, postprocessor, converter
-    )
-    ans_false_ds = Dataset.from_list(unanswerable_samples)
-    print("\n为answerable=False样本生成prompt...")
-    ans_false_ds = ans_false_ds.map(lambda ex, idx: build_row_with_prompt(ex), with_indices=True)
-    ans_false_ds = ans_false_ds.shuffle(seed=42)
+    # 根据类型保存为train或test文件
+    if args.type == 'train':
+        output_path = os.path.join(output_dir, 'train.parquet')
+    else:
+        output_path = os.path.join(output_dir, 'test.parquet')
     
-    ans_false_path = os.path.join(output_dir, '2wikimultihop_ans_false.parquet')
-    ans_false_ds.to_parquet(ans_false_path)
-    print(f"💾 已保存 answerable=False 到 {ans_false_path} (样本数: {len(ans_false_ds)})")
+    answerable_ds.to_parquet(output_path)
+    print(f"💾 已保存到 {output_path} (样本数: {len(answerable_ds)})")
     
     # 验证
     print("\n验证保存结果...")
-    df_true = pd.read_parquet(ans_true_path)
-    df_false = pd.read_parquet(ans_false_path)
+    df = pd.read_parquet(output_path)
     n_true = sum(
-        1 for _, row in df_true.iterrows()
+        1 for _, row in df.iterrows()
         if isinstance(row.get('extra_info'), (dict, str)) and
         (json.loads(row['extra_info']) if isinstance(row['extra_info'], str) else row['extra_info']).get('answerable') is True
     )
-    n_false = sum(
-        1 for _, row in df_false.iterrows()
-        if isinstance(row.get('extra_info'), (dict, str)) and
-        (json.loads(row['extra_info']) if isinstance(row['extra_info'], str) else row['extra_info']).get('answerable') is False
-    )
-    print(f"   ✓ ans_true answerable=True: {n_true}/{len(df_true)}")
-    print(f"   ✓ ans_false answerable=False: {n_false}/{len(df_false)}")
-    
-    # 清理
-    if llm is not None:
-        try:
-            llm.shutdown()
-        except Exception:
-            pass
+    print(f"   ✓ answerable=True: {n_true}/{len(df)}")
     
     print("\n✅ 完成!\n")
 
 
 if __name__ == '__main__':
     main()
-
-

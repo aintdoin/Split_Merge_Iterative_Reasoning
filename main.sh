@@ -7,8 +7,8 @@ MODEL_PATH=/mnt/shared-storage-user/liyafu/models/Qwen2.5-7B-Instruct
 export TASK=musique #
 export MODEL_NAME=qwen_7b  # Model identifier for checkpoint organization
 export STRATEGY=grpo #grpo_evar_math_scaled, grpo_evar_math_weighted, grpo_evar_token_scaled
-train_files="['data/${TASK}/train_true.parquet', 'data/${TASK}/train_false.parquet']"
-test_files="['data/${TASK}/test_true.parquet', 'data/${TASK}/test_false.parquet']"
+train_files="['data/${TASK}/train.parquet']"
+test_files="['data/${TASK}/test.parquet']"
 
 export NLTK_DATA=/mnt/shared-storage-user/liyafu/runquan/nltk_data
 export VLLM_ATTENTION_BACKEND=XFORMERS
@@ -36,7 +36,7 @@ export ENABLE_SYSTEM_PROMPT_INJECTION=true
 export MODEL_TEMPLATE=qwen 
 
 export BETA_WARMUP_STEPS=100
-export SYSTEM_PROMPT_TYPE=idk_aware #idk_aware, idk_not_aware, rlcr
+export SYSTEM_PROMPT_TYPE=cot #cot directly
 export USE_REWARD=THS  #GRPO, TruthRL, THS, RLCR
 
 nohup python3 -m verl.trainer.main_ppo \
