@@ -1,7 +1,7 @@
 # 默认参数
 export CUDA_VISIBLE_DEVICES=4
 export USE_LLM_JUDGE=true  # Enable LLM judge
-export LLM_JUDGE_API_BASE=http://100.103.112.35:8000
+export LLM_JUDGE_API_BASE=http://localhost:8000
 export LLM_JUDGE_MODEL_NAME=/mnt/shared-storage-user/liyafu/models/Llama-3.3-70B-Instruct
 export LLM_JUDGE_API_KEY=  # Empty or your API key
 MODEL_PATH="/mnt/shared-storage-user/liyafu/models/Qwen2.5-7B-Instruct"

@@ -24,7 +24,7 @@ MAX_TOKENS=4096  # 单次生成的最大输出长度
 
 # LLM Judge configuration (must match server configuration)
 export USE_LLM_JUDGE=true
-export LLM_JUDGE_API_BASE=http://100.103.112.35:8000
+export LLM_JUDGE_API_BASE=http://localhost:8000
 export LLM_JUDGE_MODEL_NAME=/mnt/shared-storage-user/liyafu/models/Llama-3.3-70B-Instruct
 export LLM_JUDGE_API_KEY=
 export LLM_JUDGE_MAX_WORKERS=8

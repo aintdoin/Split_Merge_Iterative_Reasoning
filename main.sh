@@ -21,7 +21,7 @@ export WANDB_MODE=offline
 export RAY_memory_usage_threshold=0.98
 
 export USE_LLM_JUDGE=true
-export LLM_JUDGE_API_BASE=http://100.103.112.35:8000
+export LLM_JUDGE_API_BASE=http://localhost:8000
 export LLM_JUDGE_MODEL_NAME=/mnt/shared-storage-user/liyafu/models/Llama-3.3-70B-Instruct
 export LLM_JUDGE_API_KEY=  # Empty or your API key
 export LLM_JUDGE_MAX_WORKERS=8  # Number of concurrent judge requests
@@ -81,6 +81,7 @@ nohup python3 -m verl.trainer.main_ppo \
     reward_model.model.path=$REWARD_MODEL_PATH \
     reward_model.micro_batch_size_per_gpu=64 \
     reward_model.model.trust_remote_code=True \
+    data.shuffle=True \
     algorithm.kl_ctrl.kl_coef=0.05 \
     trainer.critic_warmup=0 \
     trainer.logger=['wandb'] \

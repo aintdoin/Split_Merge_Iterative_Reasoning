@@ -160,76 +160,13 @@ def compute_advantage(self, data: DataProto, adv_estimator, gamma=1.0, lam=1.0, 
                                                                         variance_threshold=variance_threshold)
             # ============ start of step-wise GRPO  ============
             sentence_mask = data.batch['sentence_mask']
-            flip_mask = (sentence_mask * advantages) >= 0.0
-            advantages = torch.where(flip_mask, advantages, -advantages)
-        elif strategy == 'fspo_evar':
-            advantages, returns = core_algos.compute_grpo_outcome_advantage(token_level_rewards=token_level_rewards,
-                                                                        eos_mask=response_mask,
-                                                                        index=index,
-                                                                        variance_threshold=variance_threshold)
-            
-            sentence_mask = data.batch['sentence_mask']  # [bs, L]
             device = advantages.device
-            #assert (advantages[0] != 0).nonzero()[-1].item() == (sentence_mask[0] != 0).nonzero()[-1].item() +4
-            # 1) 形状/掩码对齐：仅在回答区间内起效，其余置 0
             assert sentence_mask.shape == advantages.shape, \
                 f"sentence_mask.shape {sentence_mask.shape} 与 advantages.shape {advantages.shape} 不一致"
-
             sentence_mask = sentence_mask.to(dtype=advantages.dtype, device=device)
-            # 直接用mask==1
             sentence_mask = sentence_mask * response_mask.to(sentence_mask.dtype)
-
             flip_mask = (sentence_mask * advantages) >= 0.0
             advantages = torch.where(flip_mask, advantages, -advantages)
-
-        elif strategy == 'grpo_evar_rewardshaping':
-            advantages, returns = core_algos.compute_grpo_outcome_advantage(
-                token_level_rewards=token_level_rewards,
-                eos_mask=response_mask,
-                index=index,
-                variance_threshold=variance_threshold
-            )  
-            sentence_mask = data.batch['sentence_mask']  # [bs, L]
-            device = advantages.device
-            #assert (advantages[0] != 0).nonzero()[-1].item() == (sentence_mask[0] != 0).nonzero()[-1].item() +4
-            # 1) 形状/掩码对齐：仅在回答区间内起效，其余置 0
-            assert sentence_mask.shape == advantages.shape, \
-                f"sentence_mask.shape {sentence_mask.shape} 与 advantages.shape {advantages.shape} 不一致"
-
-            sentence_mask = sentence_mask.to(dtype=advantages.dtype, device=device)
-            #将回答部分替换成advantages
-            two_mask = (sentence_mask == 2)
-            if two_mask.any():
-                first_adv = advantages[:, 0].unsqueeze(1)  # [bs, 1]
-                sentence_mask = torch.where(two_mask, first_adv, sentence_mask)
-            sentence_mask = sentence_mask * response_mask.to(sentence_mask.dtype)  # 屏蔽非回答 token
-            
-            # 4) 获取 PBRS 参数
-            alpha = float(os.environ.get('PBRS_ALPHA', 0.1))  # 缩放系数，建议 0.01-0.1
-            smoothing_window = int(os.environ.get('PBRS_SMOOTH_WINDOW', 3))  # 平滑窗口
-            clip_value = float(os.environ.get('PBRS_CLIP', 2.0))  # 裁剪值
-            gamma = float(os.environ.get('PBRS_GAMMA', 1.0))  # 通常与 GAE 的 gamma 一致
-            
-            # 5) 计算 PBRS shaping reward: F_t = gamma * phi(s_{t+1}) - phi(s_t)
-            shaping_rewards = core_algos.compute_pbrs_shaping_reward(
-                sentence_mask=sentence_mask,
-                response_mask=response_mask,
-                gamma=gamma,
-                alpha=alpha,
-                smoothing_window=smoothing_window,
-                clip_value=clip_value
-            )
-            
-            # 6) 将 shaping rewards 加到 token_level_rewards 上
-            # R'_t = R_t + F_t
-            token_level_rewards = token_level_rewards + shaping_rewards
-            # 7) 用修改后的 rewards 计算 advantages（理论保证不改变最优策略）
-            advantages, returns = core_algos.compute_grpo_outcome_advantage(
-                token_level_rewards=token_level_rewards,
-                eos_mask=response_mask,
-                index=index,
-                variance_threshold=variance_threshold
-            )    
 
         elif strategy == 'grpo_evar_math_weighted':
             """
