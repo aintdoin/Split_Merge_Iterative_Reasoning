@@ -118,7 +118,7 @@ python scripts/parquet_to_json.py /mnt/shared-storage-user/liyafu/runquan/Ineffe
 python scripts/parquet_to_json.py /path/to/file.parquet -o /path/to/out.jsonl --jsonl
 
 # 只导出前 N 条（快速查看）
-python scripts/parquet_to_json.py /mnt/shared-storage-user/liyafu/runquan/SMIR/data/halueval/test.parquet --jsonl --limit 5
+python scripts/parquet_to_json.py /mnt/shared-storage-user/liyafu/runquan/SMIR/SFT/data/musique_train.parquet --jsonl --limit 5
 
 # 控制 JSON 缩进（仅对 .json 生效）
 python scripts/parquet_to_json.py /path/to/file.parquet --indent 2

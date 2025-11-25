@@ -1,9 +1,9 @@
 #!/bin/bash
 set -x
-export CUDA_VISIBLE_DEVICES=0,1
+export CUDA_VISIBLE_DEVICES=4,5
 # 添加当前目录到 PYTHONPATH
 export PYTHONPATH=$PYTHONPATH:$(pwd)
-export SYSTEM_PROMPT_TYPE=directly
+export SYSTEM_PROMPT_TYPE=cot
 
 # 设置训练资源
 NNODES=1
@@ -11,18 +11,21 @@ N_GPUS=2  # 使用2张GPU
 
 # 模型和数据路径
 MODEL_PATH="/mnt/shared-storage-user/liyafu/models/Qwen2.5-7B-Instruct"
-TRAIN_FILE="SFT/data/musique_for_sft.parquet"
-VAL_FILE="data/musique/test_true.parquet"
-
-# 输出目录
-OUTPUT_DIR="SFT/output/sft_experiment_$(date +%Y%m%d_%H%M%S)"
+TRAIN_FILE="SFT/data/musique_train.parquet"
+VAL_FILE="data/musique/test.parquet"
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+# 输出目录和日志文件
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+OUTPUT_DIR="SFT/output/sft_experiment_$TIMESTAMP"
+LOG_FILE="$OUTPUT_DIR/train.log"
 
 # 确保输出目录存在
 mkdir -p "$OUTPUT_DIR"
 
-# 启动训练
-# 使用 hydra 的语法加载配置文件并覆盖特定参数
-torchrun --nproc_per_node=$N_GPUS \
+echo "开始训练，日志将输出到: $LOG_FILE"
+
+# 使用 nohup 在后台启动训练，输出重定向到日志文件
+nohup torchrun --nproc_per_node=$N_GPUS \
     verl/trainer/fsdp_sft_trainer.py \
     --config-path "config" \
     --config-name "sft_trainer" \
@@ -34,6 +37,11 @@ torchrun --nproc_per_node=$N_GPUS \
     model.enable_gradient_checkpointing=True \
     trainer.default_local_dir="$OUTPUT_DIR" \
     data.train_batch_size=64 \
-    data.micro_batch_size_per_gpu=1 \
-    trainer.total_epochs=3 \
-    optim.lr=2e-5
+    data.micro_batch_size_per_gpu=2 \
+    trainer.total_epochs=6 \
+    optim.lr=2e-5 \
+    > "$LOG_FILE" 2>&1 &
+
+# 输出进程ID
+echo "训练已在后台启动，进程ID: $!"
+echo "可以使用以下命令查看日志: tail -f $LOG_FILE"

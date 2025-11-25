@@ -1,14 +1,14 @@
 set -x
 
-export CUDA_VISIBLE_DEVICES=0
-MODEL_NAME=qwen
+export CUDA_VISIBLE_DEVICES=4
+MODEL_NAME=qwen-SFT
 export MODEL_TEMPLATE=qwen
-DATASET=halueval
-MODEL_PATH=/mnt/shared-storage-user/liyafu/models/Qwen2.5-7B-Instruct
+DATASET=musique
+MODEL_PATH=SFT/output/sft_experiment_20251124_193353/global_step_585
 #/mnt/shared-storage-user/liyafu/models/Qwen2.5-7B-Instruct
 #Qwen2.5-7B-Instruct Llama-3.1-8B-Instruct
 test_files="['data/$DATASET/test.parquet']"
-export SYSTEM_PROMPT_TYPE=tot #directly, cot, tot, dac, htp
+export SYSTEM_PROMPT_TYPE=cot #directly, cot, tot, dac, htp
 
 OUTPUT_FILE=inference/inference_results/$MODEL_NAME/$DATASET.jsonl
 FILTER_TYPE=all  # all, answerable, unanswerable
@@ -30,7 +30,6 @@ export LLM_JUDGE_API_KEY=
 export LLM_JUDGE_MAX_WORKERS=8
 export LLM_JUDGE_TIMEOUT=60
 
-export IDK=true
 python inference/inference.py \
     --test-files "$test_files" \
     --output-dir "$OUTPUT_FILE" \
