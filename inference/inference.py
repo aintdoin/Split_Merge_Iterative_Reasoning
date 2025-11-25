@@ -413,23 +413,20 @@ def main():
         empty_indices = [i for i, p in enumerate(prompts) if not p or not p.strip()]
         raise ValueError(f"Found {empty_count} empty prompts in the data")
 
-    # System prompt injection (默认启用，使用统一的 system_prompts 模块)
-    enable_injection = os.environ.get('ENABLE_SYSTEM_PROMPT_INJECTION', 'true').lower() == 'true'
     system_prompt_type = os.environ.get('SYSTEM_PROMPT_TYPE', 'idk_aware').lower()
     print(f"System Prompt Type: {system_prompt_type}")
     
-    if enable_injection:
-        from verl.utils.dataset.system_prompts import wrap_prompt_with_system
-        
-        # 默认使用 qwen 模板，可通过环境变量覆盖
-        model_template = os.environ.get('MODEL_TEMPLATE', 'qwen')
-        
-        print(f"\n🔄 启用运行时 System Prompt 注入")
-        print(f"   模板类型: {model_template}")
-        
-        # 对所有 prompts 应用 system prompt 注入
-        # wrap_prompt_with_system 会自动检测并移除旧的 system prompt（如果存在）
-        prompts = [wrap_prompt_with_system(p, model_template=model_template) for p in prompts]
+    from verl.utils.dataset.system_prompts import wrap_prompt_with_system
+    
+    # 默认使用 qwen 模板，可通过环境变量覆盖
+    model_template = os.environ.get('MODEL_TEMPLATE', 'qwen')
+    
+    print(f"\n🔄 启用运行时 System Prompt 注入")
+    print(f"   模板类型: {model_template}")
+    
+    # 对所有 prompts 应用 system prompt 注入
+    # wrap_prompt_with_system 会自动检测并移除旧的 system prompt（如果存在）
+    prompts = [wrap_prompt_with_system(p, model_template=model_template) for p in prompts]
     # Show first prompt preview
     if prompts:
         print(f"\nFirst prompt preview:")

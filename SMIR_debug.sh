@@ -34,7 +34,6 @@ export SENTENCE_LAMBDA_POS=0.5
 export SENTENCE_LAMBDA_NEG=0.5
 export GRPO_VARIANCE_THRESHOLD=0
 
-export ENABLE_SYSTEM_PROMPT_INJECTION=true
 export MODEL_TEMPLATE=qwen
 export SYSTEM_PROMPT_TYPE=rlcr #idk_aware, idk_not_aware, rlcr
 export USE_REWARD=RLCR  #GRPO, TruthRL, THS, RLCR

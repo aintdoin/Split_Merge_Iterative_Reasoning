@@ -72,7 +72,6 @@ class RLHFDataset(Dataset):
                  return_raw_chat=False,
                  truncation='error',
                  disable_unanswerable=None,
-                 enable_system_prompt_injection=None,
                  model_template='qwen'):
         if not isinstance(parquet_files, (List, ListConfig)):
             parquet_files = [parquet_files]
@@ -100,25 +99,13 @@ class RLHFDataset(Dataset):
         else:
             self.disable_unanswerable = bool(disable_unanswerable)
         
-        # Configure runtime system prompt injection
-        if enable_system_prompt_injection is None:
-            try:
-                _env = os.environ.get('ENABLE_SYSTEM_PROMPT_INJECTION', 'false').strip().lower()
-                self.enable_system_prompt_injection = _env in ('1', 'true', 'yes')
-            except Exception:
-                self.enable_system_prompt_injection = False
-        else:
-            self.enable_system_prompt_injection = bool(enable_system_prompt_injection)
-        
         self.model_template = model_template
         
-        # Load system prompt wrapper if injection is enabled
-        if self.enable_system_prompt_injection:
-            from verl.utils.dataset.system_prompts import wrap_prompt_with_system
-            self._wrap_prompt = wrap_prompt_with_system
-            print(f"[RLHFDataset] Runtime system prompt injection enabled (template={model_template})")
-        else:
-            self._wrap_prompt = None
+        # Always enable system prompt injection
+        from verl.utils.dataset.system_prompts import wrap_prompt_with_system
+        self._wrap_prompt = wrap_prompt_with_system
+        print(f"[RLHFDataset] Runtime system prompt injection enabled (template={model_template})")
+
 
         # whether to store the dataset in state_dict()
         # default not store
@@ -226,12 +213,11 @@ class RLHFDataset(Dataset):
         # 现在chat是字符串格式，直接使用它作为prompt_with_chat_template
         prompt_with_chat_template = chat
         
-        # Runtime system prompt injection (if enabled)
-        if self.enable_system_prompt_injection and self._wrap_prompt is not None:
-            prompt_with_chat_template = self._wrap_prompt(
-                prompt_with_chat_template, 
-                model_template=self.model_template
-            )
+        # Apply system prompt injection
+        prompt_with_chat_template = self._wrap_prompt(
+            prompt_with_chat_template, 
+            model_template=self.model_template
+        )
         
         # prompt_with_chat_template = self.tokenizer.apply_chat_template(chat, add_generation_prompt=True, tokenize=False)
 
