@@ -267,7 +267,7 @@ def evaluate_sample_accuracy(sample_dict, prompt, args, llm, sampling_params, po
         for ans in all_answers:
             if ans:
                 # 使用原有的本地 AnswerPostProcessor 判定
-                formatted_answer = f"</think><\\think></think>{candidate_text}<\\answer>"
+                formatted_answer = f"</think><think></think>{candidate_text}</answer>"
                 score = postprocessor.judge_answer_correctness(
                     predicted_answer=formatted_answer,
                     ground_truth_answer=ans,

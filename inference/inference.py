@@ -16,6 +16,8 @@ import argparse
 # Add parent directory to path to import verl modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from verl.utils.reward_score.answer_postprocessor import get_postprocessor
+from verl.utils.dataset.system_prompts import get_system_prompt
+from verl.utils import hf_tokenizer
 
 
 def series_to_item(ls):
@@ -416,22 +418,23 @@ def main():
     system_prompt_type = os.environ.get('SYSTEM_PROMPT_TYPE', 'idk_aware').lower()
     print(f"System Prompt Type: {system_prompt_type}")
     
-    from verl.utils.dataset.system_prompts import wrap_prompt_with_system
-    
-    # 默认使用 qwen 模板，可通过环境变量覆盖
-    model_template = os.environ.get('MODEL_TEMPLATE', 'qwen')
-    
-    print(f"\n🔄 启用运行时 System Prompt 注入")
-    print(f"   模板类型: {model_template}")
-    
-    # 对所有 prompts 应用 system prompt 注入
-    # wrap_prompt_with_system 会自动检测并移除旧的 system prompt（如果存在）
-    prompts = [wrap_prompt_with_system(p, model_template=model_template) for p in prompts]
-    # Show first prompt preview
+    print("\nInitializing tokenizer for prompt templating...")
+    tokenizer = hf_tokenizer(MODEL_PATH, trust_remote_code=True)
+    system_prompt = get_system_prompt()
+    print("Tokenizer ready. Applying the same chat template as SFT training...")
+
+    def build_prompt_with_template(user_content: str) -> str:
+        prompt_chat = []
+        if system_prompt:
+            prompt_chat.append({'role': 'system', 'content': system_prompt})
+        prompt_chat.append({'role': 'user', 'content': user_content})
+        return tokenizer.apply_chat_template(prompt_chat, add_generation_prompt=True, tokenize=False)
+
+    prompts = [build_prompt_with_template(p) for p in prompts]
     if prompts:
         print(f"\nFirst prompt preview:")
         print(f"  {prompts[0]}...")
-    
+
     # Run inference
     outputs = llm.generate(prompts, sampling_params)
     # Initialize postprocessor for reward evaluation
