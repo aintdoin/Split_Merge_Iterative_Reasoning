@@ -1,10 +1,11 @@
 # /Users/guirunquan/Documents/github/Split_Merge_Iterative_Reasoning/SFT/process_data_for_reasoning.py
 import pandas as pd
+import numpy as np
 import os
 
 # 输入和输出文件路径
-input_file = 'data/musique/train.parquet'  # 可以根据需要修改
-output_file = 'SFT/data/musique_train.parquet'  # 可以根据需要修改
+input_file = 'data/2wikimultihop/train.parquet'  # 可以根据需要修改
+output_file = 'SFT/data/2wikimultihop_train.parquet'  # 可以根据需要修改
 
 def process_data_for_reasoning():
     # 检查输入文件是否存在
@@ -42,7 +43,7 @@ def process_data_for_reasoning():
             except (ValueError, SyntaxError):
                 # 如果解析失败，将整个字符串作为一个推理步骤
                 reasoning_lines.append(f"1. {evidences}")
-        elif isinstance(evidences, list):
+        elif isinstance(evidences, (list, np.ndarray)):
             # 正常的列表处理
             for i, evidence in enumerate(evidences):
                 reasoning_lines.append(f"{i+1}. {evidence}")

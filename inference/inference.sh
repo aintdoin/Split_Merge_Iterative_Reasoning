@@ -3,7 +3,7 @@ set -x
 export CUDA_VISIBLE_DEVICES=4
 MODEL_NAME=qwen-SFT
 export MODEL_TEMPLATE=qwen
-DATASET=hotpot
+DATASET=2wikimultihop
 MODEL_PATH=SFT/output/sft_experiment_20251124_193353/global_step_585
 #/mnt/shared-storage-user/liyafu/models/Qwen2.5-7B-Instruct
 #Qwen2.5-7B-Instruct Llama-3.1-8B-Instruct

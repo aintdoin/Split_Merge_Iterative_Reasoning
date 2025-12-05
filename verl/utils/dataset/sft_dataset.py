@@ -50,10 +50,30 @@ class SFTDataset(Dataset):
         self.truncation = truncation
         self.system_prompt = system_prompt
 
-        if not isinstance(parquet_files, List):
+        import glob
+
+        # Handle input types: str, List, ListConfig, etc.
+        if isinstance(parquet_files, str):
+            parquet_files = [parquet_files]
+        elif hasattr(parquet_files, '__iter__'):
+            parquet_files = list(parquet_files)
+        else:
             parquet_files = [parquet_files]
 
-        self.parquet_files = parquet_files
+        # Expand glob patterns for local files
+        self.parquet_files = []
+        for f in parquet_files:
+            if isinstance(f, str) and not f.startswith('hdfs://') and any(char in f for char in ['*', '?', '[']):
+                matches = sorted(glob.glob(f))
+                if matches:
+                    self.parquet_files.extend(matches)
+                    print(f"Expanded glob pattern '{f}' to {len(matches)} files.")
+                else:
+                    print(f"Warning: Glob pattern '{f}' matched no files, keeping as is.")
+                    self.parquet_files.append(f)
+            else:
+                self.parquet_files.append(f)
+
         if isinstance(tokenizer, str):
             tokenizer = hf_tokenizer(tokenizer)
         self.tokenizer: PreTrainedTokenizer = tokenizer
