@@ -41,7 +41,7 @@ export USE_LLM_ANSWER_EXTRACTION=false
 export ENABLE_BATCH_ANSWER_PROCESSING=false
 
 export FOUNDATION_LOCAL_PATH=/mnt/shared-storage-user/liyafu/runquan/models/flan-t5-base
-export STRATEGY=grpo_evar_sentence_scaled
+export STRATEGY=grpo
 export SENTENCE_LAMBDA=0.2
 
 # Build resume mode argument if checkpoint provided

@@ -6,7 +6,7 @@ MODEL_PATH=/mnt/shared-storage-user/liyafu/models/Qwen2.5-7B-Instruct
 
 export TASK=musique #
 export MODEL_NAME=qwen_7b  # Model identifier for checkpoint organization
-export STRATEGY=grpo #grpo_evar_math_scaled, grpo_evar_math_weighted, grpo_evar_token_scaled
+export STRATEGY=grpo
 train_files="['data/${TASK}/train.parquet']"
 test_files="['data/${TASK}/test.parquet']"
 
@@ -93,7 +93,7 @@ nohup python3 -m verl.trainer.main_ppo \
     trainer.default_hdfs_dir=null \
     trainer.test_freq=20 \
     trainer.total_epochs=1 $@ > ${STRATEGY}_${TASK}_qwen_7b.log 2>&1 &
-    #trainer.resume_mode='checkpoints/musique/qwen_7b/grpo_evar_math_scaled/global_step_380' \
+    #trainer.resume_mode='checkpoints/musique/qwen_7b/global_step_380' \
 
 
 

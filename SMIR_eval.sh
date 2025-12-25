@@ -3,7 +3,7 @@ set -x
 MODEL_PATH=/mnt/shared-storage-user/liyafu/models/Qwen2.5-7B-Instruct
 export TASK=2wikimultihop #
 export MODEL_NAME=qwen_7b  # Model identifier for checkpoint organization
-export STRATEGY=grpo_evar_math_scaled #grpo_evar_math_scaled, grpo_evar_math_weighted, grpo_evar_token_scaled
+export STRATEGY=grpo
 train_files="['data/${TASK}/train_true.parquet']"
 test_files="['data/${TASK}/test_false.parquet']"
 
@@ -86,11 +86,9 @@ python3 -m verl.trainer.main_ppo \
     trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
     trainer.default_local_dir="checkpoints/\${trainer.project_name}/${MODEL_NAME}/\${trainer.experiment_name}" \
-    trainer.resume_mode='checkpoints/musique/qwen_7b/grpo_evar_math_scaled/global_step_380' \
     trainer.default_hdfs_dir=null \
     trainer.test_freq=20 \
     trainer.total_epochs=1 $@ 2>&1 | tee debug.log
-    #trainer.resume_mode='checkpoints/musique/qwen_7b/grpo_evar_math_scaled/global_step_500' \
 
 
 
