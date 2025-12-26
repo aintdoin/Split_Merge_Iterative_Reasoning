@@ -36,7 +36,6 @@ export GRPO_VARIANCE_THRESHOLD=0
 
 export MODEL_TEMPLATE=qwen
 export SYSTEM_PROMPT_TYPE=rlcr #idk_aware, idk_not_aware, rlcr
-export USE_REWARD=RLCR  #GRPO, TruthRL, THS, RLCR
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \

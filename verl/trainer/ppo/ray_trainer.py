@@ -1295,7 +1295,7 @@ class RayPPOTrainer(object):
                             reward_tensor, format_tensor, answer_tensor, base_reward_tensor = self.reward_fn(batch)
                             # Note: base_reward_tensor is not used in training, only in validation
                         
-                        use_reward_mode = os.environ.get('USE_REWARD', 'TRUTHRL').strip().upper()
+                        strategy = os.environ.get('STRATEGY', 'grpo')
                         rt = reward_tensor
                         # 阈值：奖励函数通常仅在最后一个有效 token 上给出 {-1, 0, +1}
                         pos_mask = rt >= 0.999
@@ -1303,58 +1303,93 @@ class RayPPOTrainer(object):
                         zero = torch.zeros_like(rt, dtype=rt.dtype, device=rt.device)
                         one = torch.ones_like(rt, dtype=rt.dtype, device=rt.device)
                         minus_one = -one
-                        if use_reward_mode == 'GRPO':
+                        
+                        if strategy == 'cosmo':
+                            # Cosmo reward logic
+                            decoded_responses = self.tokenizer.batch_decode(batch.batch['responses'], skip_special_tokens=True)
+                            
+                            if 'hops' in batch.non_tensor_batch:
+                                gold_hops = batch.non_tensor_batch['hops']
+                            else:
+                                print("Warning: 'hops' not found in batch.non_tensor_batch. Using default 0.")
+                                gold_hops = np.zeros(len(decoded_responses))
+
+                            new_rewards = []
+                            for i, resp in enumerate(decoded_responses):
+                                # Extract steps from <think> block
+                                step_count = 0
+                                think_match = re.search(r'<think>(.*?)</think>', resp, re.DOTALL)
+                                if think_match:
+                                    think_content = think_match.group(1)
+                                    steps = re.findall(r'^\s*\d+\.', think_content, re.MULTILINE)
+                                    step_count = len(steps)
+                                
+                                is_correct = pos_mask[i].item()
+                                gold = float(gold_hops[i]) if gold_hops[i] is not None else 0.0
+                                
+                                r = 0.0
+                                if is_correct:
+                                    r += 2.0
+                                    if abs(step_count - gold) <= 1:
+                                        r += 1.0
+                                    else:
+                                        r -= 1.0
+                                else:
+                                    r += 0.0
+                                
+                                new_rewards.append(r)
+                            
+                            mapped_rewards = torch.tensor(new_rewards, device=rt.device, dtype=rt.dtype)
+                        elif strategy == 'grpo':
                             # 正确 +1，错误 / miss 均 +0
                             mapped_rewards = torch.where(pos_mask, one, zero)
-                        elif use_reward_mode == 'THS':
-                            # 正确 +y0，错误 -x0，miss +0
-                            if hasattr(self, 'initial_validation_metrics') and self.initial_validation_metrics:
-                                x0 = float(self.initial_validation_metrics.get('x0', 1.0))
-                                y0 = float(self.initial_validation_metrics.get('y0', 1.0))
-                            else:
-                                x0, y0 = 1.0, 1.0
-                            mapped_rewards = rt.clone()
-                            mapped_rewards[pos_mask] = y0
-                            mapped_rewards[neg_mask] = -x0
-                            # 其余位置保持为 0
-                            mapped_rewards = mapped_rewards * one  # no-op, 保持 dtype/device 一致
-                        elif use_reward_mode == 'TRUTHRL':
-                            # TruthRL：正确 +1，错误 -1，miss +0
-                            mapped_rewards = torch.where(
-                                pos_mask, one, torch.where(neg_mask, minus_one, zero)
-                            )
-                        elif use_reward_mode == 'RLCR':
-                            # RLCR: reward = 1 - (cr - conf)**2
-                            # cr: 正确为1, 错误/miss为0
-                            # conf: 从 <confidence> 标签中提取
+                        elif strategy == 'lcpo':
+                            # LCPO: 长度惩罚
+                            # 计算回复长度
+                            response_ids = batch.batch['responses']
+                            response_length = response_ids.size(-1)
+                            attention_mask = batch.batch['attention_mask']
+                            response_mask = attention_mask[:, -response_length:]
+                            valid_response_lengths = response_mask.sum(dim=-1).float()
                             
-                            responses = batch.batch['responses']
-                            # 如果 tensor 在 GPU，需转 CPU 以便解码
-                            if isinstance(responses, torch.Tensor):
-                                responses_cpu = responses.cpu().tolist()
-                            else:
-                                responses_cpu = responses.tolist()
-
-                            conf_scores = []
-                            for r_ids in responses_cpu:
-                                r_str = self.tokenizer.decode(r_ids, skip_special_tokens=True)
-                                match = re.search(r'<confidence>(.*?)</confidence>', r_str)
-                                val = 0.5 # 默认值
-                                if match:
-                                    try:
-                                        v = float(match.group(1).strip())
-                                        val = max(0.0, min(1.0, v))
-                                    except ValueError:
-                                        pass
-                                conf_scores.append(val)
+                            # 基础奖励：同 GRPO (正确+1, 错误+0)
+                            base_rewards = torch.where(pos_mask, one, zero)
                             
-                            conf_tensor = torch.tensor(conf_scores, device=rt.device, dtype=rt.dtype)
+                            # 惩罚：超过500部分，每100token扣0.1
+                            excess_length = torch.clamp(valid_response_lengths - 500, min=0)
+                            penalty = torch.floor(excess_length / 100) * 0.1
                             
-                            # cr: pos_mask -> 1.0, else -> 0.0
-                            cr_tensor = torch.where(pos_mask, one, zero)
+                            mapped_rewards = base_rewards - penalty
                             
-                            # Calculate RLCR reward
-                            mapped_rewards = one - (cr_tensor - conf_tensor) ** 2
+                        elif strategy == 'think_prune':
+                            # ThinkPrune: 推理长度硬约束
+                            # 约束值：初始1000，每10步减100，最低500
+                            limit = max(500, 1000 - (self.global_steps // 10) * 100)
+                            
+                            decoded_responses = self.tokenizer.batch_decode(batch.batch['responses'], skip_special_tokens=True)
+                            new_rewards = []
+                            
+                            for i, resp in enumerate(decoded_responses):
+                                # 提取 <think> 内容并计算长度
+                                think_match = re.search(r'<think>(.*?)</think>', resp, re.DOTALL)
+                                think_len = 0
+                                if think_match:
+                                    think_content = think_match.group(1)
+                                    # 重新 tokenize 计算准确 token 数
+                                    think_tokens = self.tokenizer(think_content, add_special_tokens=False)['input_ids']
+                                    think_len = len(think_tokens)
+                                
+                                is_correct = pos_mask[i].item()
+                                
+                                # 超过约束直接归0，否则保留基础奖励 (正确+1)
+                                if think_len > limit:
+                                    r = 0.0
+                                else:
+                                    r = 1.0 if is_correct else 0.0
+                                    
+                                new_rewards.append(r)
+                            
+                            mapped_rewards = torch.tensor(new_rewards, device=rt.device, dtype=rt.dtype)
                         else:
                             # 兜底：按 TruthRL 处理
                             mapped_rewards = torch.where(

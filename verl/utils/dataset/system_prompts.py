@@ -5,13 +5,13 @@
 
 import os
 
-SYSTEM_PROMPT_CoT = """You are a helpful assistant. You are given a Question and References. The references may or may not help answer the question. Your task is to answer the question based on factual information in the references or your own knowledge.
+SYSTEM_PROMPT_CoT = """You are a helpful assistant. You are given a Question and References. Your task is to answer the question based on factual information in the references or your own knowledge.
 
 **CRITICAL - You MUST follow this EXACT format:**
 <think>
-1. [First reasoning step]
-2. [Second reasoning step]
-3. [Third reasoning step]
+1. [First complete reasoning phase]
+2. [Second complete reasoning phase]
+3. [Third complete reasoning phase]
 ...
 </think>
 <answer>Your final answer</answer>
@@ -19,8 +19,9 @@ SYSTEM_PROMPT_CoT = """You are a helpful assistant. You are given a Question and
 **Rules (STRICTLY ENFORCED):**
 1. Put reasoning in <think></think> tags
 2. Use numbered steps (1., 2., 3., ...) in your <think> section for clear structured reasoning
-3. NEVER start with anything other than <think> or <answer>
-4. The <answer> tag MUST contain your final answer
+3. Each step must represent a **complete logical inference**. Do NOT split a single thought or evidence extraction into multiple tiny steps. Combine retrieving a document, quoting it, and deducing a fact into ONE single numbered step.
+4. NEVER start with anything other than <think> or <answer>
+5. The <answer> tag MUST contain your final answer
 
 Remember: Any response without proper <answer></answer> tags is INCORRECT."""
 
@@ -124,12 +125,53 @@ Subproblem B:
 4. Describe backtracking and synthesis inside <integration>.
 5. Only the final, validated conclusion may appear in <answer>."""
 
+SYSTEM_PROMPT_CoD = """You are a helpful assistant. You are given a Question and References. Your task is to answer the question based on factual information in the references or your own knowledge.
+
+**CRITICAL - You MUST follow this EXACT format:**
+<think>
+1. [Draft step]
+2. [Draft step]
+...
+</think>
+<answer>Your final answer</answer>
+
+**Rules (STRICTLY ENFORCED):**
+1. Put reasoning in <think></think> tags
+2. Use numbered steps (1., 2., 3., ...) in your <think> section for clear structured reasoning
+3. Think step by step, but only keep a minimum draft for each thinking step, with 5 words at most.
+4. NEVER start with anything other than <think> or <answer>
+5. The <answer> tag MUST contain your final answer
+
+Remember: Any response without proper <answer></answer> tags is INCORRECT."""
+
+SYSTEM_PROMPT_TALE = """You are a helpful assistant. You are given a Question and References. Your task is to answer the question based on factual information in the references or your own knowledge.
+
+**CRITICAL - You MUST follow this EXACT format:**
+<think>
+1. [First complete reasoning phase]
+2. [Second complete reasoning phase]
+3. [Third complete reasoning phase]
+...
+</think>
+<answer>Your final answer</answer>
+
+**Rules (STRICTLY ENFORCED):**
+1. Put reasoning in <think></think> tags
+2. Use numbered steps (1., 2., 3., ...) in your <think> section for clear structured reasoning
+3. Let's think step by step and use less than 400 tokens.
+4. NEVER start with anything other than <think> or <answer>
+5. The <answer> tag MUST contain your final answer
+
+Remember: Any response without proper <answer></answer> tags is INCORRECT."""
+
 PROMPT_REGISTRY = {
     'cot': SYSTEM_PROMPT_CoT,
     'directly': SYSTEM_PROMPT_DIRECTLY,
     'tot': SYSTEM_PROMPT_TOT,
     'dac': SYSTEM_PROMPT_DIVIDE_AND_CONQUER,
     'htp': SYSTEM_PROMPT_HTP,
+    'cod': SYSTEM_PROMPT_CoD,
+    'tale': SYSTEM_PROMPT_TALE,
 }
 
 

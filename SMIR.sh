@@ -6,7 +6,7 @@ MODEL_PATH=/mnt/shared-storage-user/liyafu/models/Qwen2.5-7B-Instruct
 
 export TASK=musique #
 export MODEL_NAME=qwen_7b  # Model identifier for checkpoint organization
-export STRATEGY=grpo
+export STRATEGY=cosmo #grpo, cosmo, lcpo, think_prune
 train_files="['data/${TASK}/train.parquet']"
 test_files="['data/${TASK}/test.parquet']"
 
@@ -36,7 +36,6 @@ export MODEL_TEMPLATE=qwen
 
 export BETA_WARMUP_STEPS=100
 export SYSTEM_PROMPT_TYPE=cot #cot directly
-export USE_REWARD=THS  #GRPO, TruthRL, THS, RLCR
 
 nohup python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.grad_clip=0.5 \

@@ -33,7 +33,6 @@ export MODEL_TEMPLATE=qwen
 
 export BETA_WARMUP_STEPS=100
 export SYSTEM_PROMPT_TYPE=idk_aware #idk_aware, idk_not_aware, rlcr
-export USE_REWARD=THS  #GRPO, TruthRL, THS, RLCR
 
 python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.grad_clip=0.5 \
