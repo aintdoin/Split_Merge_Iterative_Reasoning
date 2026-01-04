@@ -14,9 +14,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Configuration
 USE_METHOD = os.environ.get('USE_METHOD', 'cosmo')
-INPUT_FILE = os.environ.get('INPUT_FILE', 'data/2wikimultihop/train.parquet')
-OUTPUT_FILE = os.environ.get('OUTPUT_FILE', 'SFT/data/2wikimultihop_train.parquet')
-OUTPUT_RL_FILE = os.environ.get('OUTPUT_RL_FILE', 'data/2wikimultihop/train_rl.parquet')
+INPUT_FILE = os.environ.get('INPUT_FILE', 'data/musique/train.parquet')
+OUTPUT_FILE = os.environ.get('OUTPUT_FILE', 'SFT/data/musique_train.parquet')
+OUTPUT_RL_FILE = os.environ.get('OUTPUT_RL_FILE', 'data/musique/train_rl.parquet')
 MODEL_PATH = os.environ.get('MODEL_PATH', '') # Required for C3oT, FS_BoN, SPIRIT
 
 def get_judge_api_client():

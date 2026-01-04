@@ -136,15 +136,18 @@ class FSDPSFTTrainer(object):
                                         max_length=config.data.max_length,
                                         truncation=config.data.truncation,
                                         system_prompt=system_prompt)
-        self.val_dataset = SFTDataset(parquet_files=config.data.val_files,
-                                      tokenizer=self.tokenizer,
-                                      prompt_key=config.data.prompt_key,
-                                      prompt_dict_keys=config.data.get('prompt_dict_keys', None),
-                                      response_key=config.data.response_key,
-                                      response_dict_keys=config.data.get('response_dict_keys', None),
-                                      max_length=config.data.max_length,
-                                      truncation=config.data.truncation,
-                                      system_prompt=system_prompt)
+        if config.data.get('val_files', None):
+            self.val_dataset = SFTDataset(parquet_files=config.data.val_files,
+                                          tokenizer=self.tokenizer,
+                                          prompt_key=config.data.prompt_key,
+                                          prompt_dict_keys=config.data.get('prompt_dict_keys', None),
+                                          response_key=config.data.response_key,
+                                          response_dict_keys=config.data.get('response_dict_keys', None),
+                                          max_length=config.data.max_length,
+                                          truncation=config.data.truncation,
+                                          system_prompt=system_prompt)
+        else:
+            self.val_dataset = None
 
         # build dataloader
         # Use data parallel rank and size instead of global rank and world size
@@ -174,17 +177,21 @@ class FSDPSFTTrainer(object):
                                            pin_memory=True,
                                            drop_last=True)
 
-        self.val_sampler = DistributedSampler(self.val_dataset,
-                                              shuffle=True,
-                                              num_replicas=world_size,
-                                              rank=rank,
-                                              drop_last=True)
-        self.val_dataloader = DataLoader(dataset=self.val_dataset,
-                                         batch_size=config.data.micro_batch_size_per_gpu,
-                                         sampler=self.val_sampler,
-                                         num_workers=8,
-                                         pin_memory=True,
-                                         drop_last=True)
+        if self.val_dataset:
+            self.val_sampler = DistributedSampler(self.val_dataset,
+                                                  shuffle=True,
+                                                  num_replicas=world_size,
+                                                  rank=rank,
+                                                  drop_last=True)
+            self.val_dataloader = DataLoader(dataset=self.val_dataset,
+                                             batch_size=config.data.micro_batch_size_per_gpu,
+                                             sampler=self.val_sampler,
+                                             num_workers=8,
+                                             pin_memory=True,
+                                             drop_last=True)
+        else:
+            self.val_sampler = None
+            self.val_dataloader = None
 
     def _build_model_optimizer(self):
         # TODO (zhangchi.usc1992):
@@ -485,32 +492,34 @@ class FSDPSFTTrainer(object):
                 # for early exit validation
                 if global_step >= self.total_training_steps:
                     # Perform final validation
-                    val_losses = []
-                    for val_data in self.val_dataloader:
-                        val_data = TensorDict(val_data, batch_size=self.config.data.micro_batch_size_per_gpu).cuda()
-                        val_loss = self.validation_step(val_data)
-                        val_losses.append(val_loss)
-                    if rank == 0:
-                        avg_val_loss = torch.mean(torch.stack(val_losses))
-                        metric = {'val/loss': avg_val_loss.detach().item()}
-                        tracking.log(data=metric, step=global_step)
-                    torch.distributed.barrier()
+                    if self.val_dataloader:
+                        val_losses = []
+                        for val_data in self.val_dataloader:
+                            val_data = TensorDict(val_data, batch_size=self.config.data.micro_batch_size_per_gpu).cuda()
+                            val_loss = self.validation_step(val_data)
+                            val_losses.append(val_loss)
+                        if rank == 0:
+                            avg_val_loss = torch.mean(torch.stack(val_losses))
+                            metric = {'val/loss': avg_val_loss.detach().item()}
+                            tracking.log(data=metric, step=global_step)
+                        torch.distributed.barrier()
 
                     # Save final checkpoint
                     self.save_checkpoint(step=global_step)
                     return
 
             # validation
-            val_losses = []
-            for data in self.val_dataloader:
-                data = TensorDict(data, batch_size=self.config.data.micro_batch_size_per_gpu).cuda()
-                val_loss = self.validation_step(data)
-                val_losses.append(val_loss)
-            if rank == 0:
-                val_loss = torch.mean(torch.stack(val_losses))
-                metric = {'val/loss': val_loss.detach().item()}
-                tracking.log(data=metric, step=global_step)
-            torch.distributed.barrier()
+            if self.val_dataloader:
+                val_losses = []
+                for data in self.val_dataloader:
+                    data = TensorDict(data, batch_size=self.config.data.micro_batch_size_per_gpu).cuda()
+                    val_loss = self.validation_step(data)
+                    val_losses.append(val_loss)
+                if rank == 0:
+                    val_loss = torch.mean(torch.stack(val_losses))
+                    metric = {'val/loss': val_loss.detach().item()}
+                    tracking.log(data=metric, step=global_step)
+                torch.distributed.barrier()
 
             # save checkpoint
             self.save_checkpoint(step=global_step)

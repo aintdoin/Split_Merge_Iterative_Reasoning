@@ -1,6 +1,6 @@
 #!/bin/bash
 set -x
-export CUDA_VISIBLE_DEVICES=0,1,2,3
+export CUDA_VISIBLE_DEVICES=4,5,6,7
 # 添加当前目录到 PYTHONPATH
 export PYTHONPATH=$PYTHONPATH:$(pwd)
 export SYSTEM_PROMPT_TYPE=cot
@@ -16,7 +16,7 @@ MODEL_PATH="/mnt/shared-storage-user/liyafu/models/Qwen2.5-7B-Instruct"
 # 2. 通配符模式: "path/to/*.parquet"
 # 3. 文件列表字符串: "['path/to/file1.parquet', 'path/to/file2.parquet']"
 TRAIN_FILE="SFT/data/*.parquet"
-VAL_FILE="['data/2wikimultihop/test.parquet', 'data/hotpot/test.parquet', 'data/musique/test.parquet', 'data/halueval/test.parquet']"
+VAL_FILE=null
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # 输出目录和日志文件
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)

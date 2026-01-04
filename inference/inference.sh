@@ -1,10 +1,10 @@
 set -x
 
-export CUDA_VISIBLE_DEVICES=4
+export CUDA_VISIBLE_DEVICES=3
 MODEL_NAME=qwen-SFT
 export MODEL_TEMPLATE=qwen
-DATASET=2wikimultihop
-MODEL_PATH=SFT/output/sft_experiment_20251124_193353/global_step_585
+DATASET=musique
+MODEL_PATH=SFT/output/sft_experiment_20251229_124814/global_step_2212
 #/mnt/shared-storage-user/liyafu/models/Qwen2.5-7B-Instruct
 #Qwen2.5-7B-Instruct Llama-3.1-8B-Instruct
 test_files="['data/$DATASET/test.parquet']"
