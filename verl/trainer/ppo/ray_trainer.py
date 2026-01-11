@@ -147,12 +147,12 @@ def compute_advantage(self, data: DataProto, adv_estimator, gamma=1.0, lam=1.0, 
         response_length = responses.size(-1)
         attention_mask = data.batch['attention_mask'] # [batch_size, 2*max_length]
         response_mask = attention_mask[:, -response_length:]  #[batch_size, max_length], 这里回答长度内为1, 其余为0, 和token_level_rewards对应
-        strategy = os.environ.get('STRATEGY', None)
-        if strategy == 'grpo':
-            advantages, returns = core_algos.compute_grpo_outcome_advantage(token_level_rewards=token_level_rewards,
-                                                                        eos_mask=response_mask,
-                                                                        index=index,
-                                                                        variance_threshold=variance_threshold)#回答长度内为adv, 其余为0, 和token_level_rewards对应
+        
+        # Calculate GRPO advantage for all strategies when estimator is 'grpo'
+        advantages, returns = core_algos.compute_grpo_outcome_advantage(token_level_rewards=token_level_rewards,
+                                                                    eos_mask=response_mask,
+                                                                    index=index,
+                                                                    variance_threshold=variance_threshold)#回答长度内为adv, 其余为0, 和token_level_rewards对应
         
         data.batch['advantages'] = advantages
         data.batch['returns'] = returns
@@ -373,6 +373,9 @@ class RayPPOTrainer(object):
         self.config = config
         self.reward_fn = reward_fn
         self.val_reward_fn = val_reward_fn
+        
+        # Initialize initial_validation_metrics for THS calculation
+        self.initial_validation_metrics = None
 
         # Format anchoring support (定期格式校准)
         self.format_anchor = None
@@ -1314,7 +1317,14 @@ class RayPPOTrainer(object):
                                 print("Warning: 'hops' not found in batch.non_tensor_batch. Using default 0.")
                                 gold_hops = np.zeros(len(decoded_responses))
 
-                            new_rewards = []
+                            # Initialize mapped_rewards with same shape as rt
+                            mapped_rewards = torch.zeros_like(rt)
+                            
+                            # Get valid response lengths to place rewards
+                            response_len = batch.batch['responses'].shape[-1]
+                            response_mask = batch.batch['attention_mask'][:, -response_len:]
+                            valid_response_lengths = response_mask.sum(dim=-1).long()
+
                             for i, resp in enumerate(decoded_responses):
                                 # Extract steps from <think> block
                                 step_count = 0
@@ -1324,7 +1334,7 @@ class RayPPOTrainer(object):
                                     steps = re.findall(r'^\s*\d+\.', think_content, re.MULTILINE)
                                     step_count = len(steps)
                                 
-                                is_correct = pos_mask[i].item()
+                                is_correct = pos_mask[i].any().item()
                                 gold = float(gold_hops[i]) if gold_hops[i] is not None else 0.0
                                 
                                 r = 0.0
@@ -1337,9 +1347,10 @@ class RayPPOTrainer(object):
                                 else:
                                     r += 0.0
                                 
-                                new_rewards.append(r)
-                            
-                            mapped_rewards = torch.tensor(new_rewards, device=rt.device, dtype=rt.dtype)
+                                # Place reward at the last valid token
+                                idx = valid_response_lengths[i] - 1
+                                if idx >= 0:
+                                    mapped_rewards[i, idx] = r
                         elif strategy == 'grpo':
                             # 正确 +1，错误 / miss 均 +0
                             mapped_rewards = torch.where(pos_mask, one, zero)

@@ -1810,6 +1810,9 @@ class RewardModelWorker(Worker):
                         # sentence_mask length MUST match valid_response_ids length
                         mask_length = min(len(valid_response_ids), len(sentence_mask))
                         sentence_mask_tensor[i, :mask_length] = torch.tensor(sentence_mask[:mask_length], dtype=torch.float32)
+                else:
+                    reasoning_score = 0.0
+                    sentence_mask_tensor[i, :] = 0.0
 
                 # Removed verbose prints to reduce log clutter
                 # print("\n" + "-" * 80)
