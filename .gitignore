@@ -17,6 +17,9 @@ data/*
 tuned/*
 SFT/data/*
 SFT/output/*
+SFT/sft_data/*
+output/*
+
 inference/inference_results/*
 tensorflow/my_graph/*
 .idea/

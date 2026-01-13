@@ -1,13 +1,13 @@
 #!/bin/bash
 set -x
-export CUDA_VISIBLE_DEVICES=4,5,6,7
+export CUDA_VISIBLE_DEVICES=4,5
 # 添加当前目录到 PYTHONPATH
 export PYTHONPATH=$PYTHONPATH:$(pwd)
 export SYSTEM_PROMPT_TYPE=cot
 
 # 设置训练资源
 NNODES=1
-N_GPUS=4  # 使用2张GPU
+N_GPUS=2  # 使用2张GPU
 
 # 模型和数据路径
 MODEL_PATH="/mnt/shared-storage-user/liyafu/models/Qwen2.5-7B-Instruct"
@@ -15,7 +15,7 @@ MODEL_PATH="/mnt/shared-storage-user/liyafu/models/Qwen2.5-7B-Instruct"
 # 1. 单个文件路径: "path/to/file.parquet"
 # 2. 通配符模式: "path/to/*.parquet"
 # 3. 文件列表字符串: "['path/to/file1.parquet', 'path/to/file2.parquet']"
-TRAIN_FILE="SFT/data/*.parquet"
+TRAIN_FILE="SFT/sft_data/qwen/C3oT/HotpotQA.parquet"
 VAL_FILE=null
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # 输出目录和日志文件
@@ -42,7 +42,7 @@ nohup torchrun --nproc_per_node=$N_GPUS \
     trainer.default_local_dir="$OUTPUT_DIR" \
     data.train_batch_size=64 \
     data.micro_batch_size_per_gpu=2 \
-    trainer.total_epochs=6 \
+    trainer.total_epochs=3 \
     optim.lr=2e-5 \
     > "$LOG_FILE" 2>&1 &
 

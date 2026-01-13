@@ -158,7 +158,7 @@ SYSTEM_PROMPT_TALE = """You are a helpful assistant. You are given a Question an
 **Rules (STRICTLY ENFORCED):**
 1. Put reasoning in <think></think> tags
 2. Use numbered steps (1., 2., 3., ...) in your <think> section for clear structured reasoning
-3. Let's think step by step and use less than 150 tokens.
+3. Let's think step by step and use less than 100 tokens.
 4. NEVER start with anything other than <think> or <answer>
 5. The <answer> tag MUST contain your final answer
 
