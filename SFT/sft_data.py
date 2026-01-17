@@ -114,6 +114,77 @@ class ReasoningRefiner:
             # Fallback on failure: treat as split, keep original
             return {"decision": "split", "refined_1": s1, "refined_2": s2}
 
+    async def process_cosmo_force_merge(self, reasoning_text: str, hops: int) -> Optional[List[str]]:
+        """
+        Force compress the whole reasoning into exactly `hops` numbered steps.
+        Return a list of step strings (without numeric prefixes) on success, else None.
+        """
+        if hops not in (2, 3, 4):
+            raise ValueError(f"cosmo_hops must be 2/3/4, got {hops}")
+
+        instruction = (
+            "Each step must represent a **complete logical inference**. "
+            "Do NOT split one inference into multiple tiny steps. "
+            "You may merge adjacent steps and remove redundancy, but do NOT add new facts. "
+            f"Output MUST contain exactly {hops} steps."
+        )
+
+        system_msg = "You are a logical editor. Output strictly in JSON."
+        user_msg = (
+            f"Input reasoning steps (may be verbose):\n{reasoning_text}\n\n"
+            f"Rules:\n{instruction}\n\n"
+            "Task: Rewrite/compress the reasoning into exactly N steps (N given above).\n\n"
+            "Output JSON format:\n"
+            "{\n"
+            '  "steps": ["step1", "step2", "..."]\n'
+            "}\n"
+            "Constraints:\n"
+            f"- steps MUST be a JSON array of length {hops}\n"
+            "- Each element is a concise sentence/paragraph WITHOUT numeric prefix\n"
+        )
+
+        response = await self._call_llm([
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": user_msg},
+        ])
+
+        def _strip_fences(text: str) -> str:
+            t = text.strip()
+            if t.startswith("```"):
+                t = re.sub(r"^```[a-zA-Z0-9]*\n?", "", t)
+                t = t.replace("```", "")
+            return t.strip()
+
+        try:
+            clean_json = _strip_fences(response)
+            data = json.loads(clean_json)
+            steps = data.get("steps")
+            if isinstance(steps, list):
+                norm = []
+                for s in steps:
+                    if not isinstance(s, str):
+                        continue
+                    # Remove accidental numbering like "1. ..."
+                    s2 = re.sub(r'^\s*\d+\.\s*', '', s).strip()
+                    if s2:
+                        norm.append(s2)
+                if len(norm) == hops:
+                    return norm
+        except Exception:
+            pass
+
+        # Fallback: try to parse numbered lines from raw response
+        lines = [ln.strip() for ln in response.splitlines() if ln.strip()]
+        parsed = []
+        for ln in lines:
+            m = re.match(r'^\s*(\d+)\.\s*(.*)$', ln)
+            if m and m.group(2).strip():
+                parsed.append(m.group(2).strip())
+        if len(parsed) == hops:
+            return parsed
+
+        return None
+
     async def run_c3ot_pipeline(self, thoughts: str) -> str:
         segments = [s.strip() for s in re.split(SPLIT_PATTERN, thoughts) if s.strip()]
         tasks = [self.process_c3ot_segment(seg) for seg in segments]
@@ -130,7 +201,7 @@ class ReasoningRefiner:
             
         return "\n".join(formatted_steps)
 
-    async def run_cosmo_pipeline(self, thoughts: str) -> str:
+    async def run_cosmo_pipeline(self, thoughts: str, cosmo_hops: Optional[int] = None) -> str:
         segments = [s.strip() for s in re.split(SPLIT_PATTERN, thoughts) if s.strip()]
         if not segments:
             return ""
@@ -157,11 +228,33 @@ class ReasoningRefiner:
                 
         # Append the last remaining segment
         final_segments.append(current_segment)
-        
-        # Format
+
+        # Optional: enforce fixed hops=n (n in 2/3/4) with a single extra Judge call
+        if cosmo_hops is None:
+            # Allow env-var override for convenience in scripts
+            env_hops = os.environ.get("COSMO_HOPS", "").strip()
+            if env_hops:
+                try:
+                    cosmo_hops = int(env_hops)
+                except Exception:
+                    cosmo_hops = None
+
+        if cosmo_hops is not None:
+            if cosmo_hops not in (2, 3, 4):
+                raise ValueError(f"--cosmo_hops must be 2/3/4, got {cosmo_hops}")
+
+            # If we still have too many segments, force-merge the whole reasoning into exactly n steps
+            # (threshold uses n+1 to allow a final wrap-up step in some datasets)
+            if len(final_segments) > (cosmo_hops + 1):
+                current_reasoning_text = "\n".join([f"{i+1}. {s}" for i, s in enumerate(final_segments)])
+                forced = await self.process_cosmo_force_merge(current_reasoning_text, cosmo_hops)
+                if forced:
+                    return "\n".join([f"{i+1}. {s}" for i, s in enumerate(forced)])
+
+        # Default format (after one top-to-bottom pass)
         return "\n".join([f"{i+1}. {s}" for i, s in enumerate(final_segments)])
 
-async def process_row(refiner: ReasoningRefiner, row: pd.Series, method: str) -> tuple[dict, str]:
+async def process_row(refiner: ReasoningRefiner, row: pd.Series, method: str, cosmo_hops: Optional[int]) -> tuple[dict, str]:
     generated_text = row.get("generated_text", "")
     prompt_text = row.get("prompt", "")
     
@@ -180,7 +273,7 @@ async def process_row(refiner: ReasoningRefiner, row: pd.Series, method: str) ->
     if method == "C3oT":
         new_think = await refiner.run_c3ot_pipeline(original_think)
     elif method == "cosmo":
-        new_think = await refiner.run_cosmo_pipeline(original_think)
+        new_think = await refiner.run_cosmo_pipeline(original_think, cosmo_hops=cosmo_hops)
         
     # Reassemble
     new_response = f"<think>\n{new_think}\n</think>\n<answer>{original_answer}</answer>"
@@ -198,6 +291,13 @@ async def main():
     parser.add_argument("--input", type=str, required=True)
     parser.add_argument("--output", type=str, required=True)
     parser.add_argument("--max_samples", type=int, default=None, help="Limit number of samples to process")
+    parser.add_argument(
+        "--cosmo_hops",
+        type=int,
+        default=None,
+        choices=[2, 3, 4],
+        help="Only for --method cosmo. Fixed hops n in {2,3,4}. If final segments > n+1, force merge into exactly n steps."
+    )
     args = parser.parse_args()
     
     # Environment Variables
@@ -252,7 +352,7 @@ async def main():
                 skipped_incorrect += 1
                 continue
 
-        tasks.append(process_row(refiner, row, args.method))
+        tasks.append(process_row(refiner, row, args.method, args.cosmo_hops))
     
     # Run with progress bar logic could be added, but simple gather for now
     # To avoid OOM with too many tasks, maybe chunk?

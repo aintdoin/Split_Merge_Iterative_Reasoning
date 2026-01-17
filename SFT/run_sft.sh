@@ -15,7 +15,7 @@ MODEL_PATH="/mnt/shared-storage-user/liyafu/models/Qwen2.5-7B-Instruct"
 # 1. 单个文件路径: "path/to/file.parquet"
 # 2. 通配符模式: "path/to/*.parquet"
 # 3. 文件列表字符串: "['path/to/file1.parquet', 'path/to/file2.parquet']"
-TRAIN_FILE="SFT/sft_data/qwen/C3oT/HotpotQA.parquet"
+TRAIN_FILE="SFT/sft_data/qwen/cosmo/HotpotQA/*.parquet"
 VAL_FILE=null
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # 输出目录和日志文件

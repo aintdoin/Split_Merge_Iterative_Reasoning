@@ -5,7 +5,7 @@ import random
 from preprocess import DATA_PATHS, normalize_documents, build_prompt
 
 def extract_hops_data(seed=42):
-    dataset_name = 'MuSiQue'
+    dataset_name = 'HotpotQA'
     split_type = 'train'
     
     # Get source path from preprocess config
@@ -30,11 +30,17 @@ def extract_hops_data(seed=42):
                 if not line: continue
                 try:
                     record = json.loads(line)
-                    rec_id = record.get('id', '')
-                    if rec_id:
-                        hop = rec_id[0]
-                        if hop in records_by_hop:
-                            records_by_hop[hop].append(record)
+                    hop = None
+                    if dataset_name == 'HotpotQA':
+                        supporting_facts = record.get('supporting_facts', [])
+                        hop = str(len(supporting_facts))
+                    else:
+                        rec_id = record.get('id', '')
+                        if rec_id:
+                            hop = rec_id[0]
+
+                    if hop in records_by_hop:
+                        records_by_hop[hop].append(record)
                 except json.JSONDecodeError:
                     continue
     except FileNotFoundError:
@@ -50,7 +56,7 @@ def extract_hops_data(seed=42):
     os.makedirs(output_dir, exist_ok=True)
     
     random.seed(seed)
-    target_count = 1000
+    target_count = 5000
     
     for hop, records in records_by_hop.items():
         if len(records) < target_count:
